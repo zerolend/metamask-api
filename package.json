@@ -1,0 +1,52 @@
+{
+  "name": "metamask-api",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "npm run clean && tsc",
+    "changelog": "conventional-changelog -p angular -u",
+    "changelog:update": "conventional-changelog -p angular -i CHANGELOG.md -s && git add CHANGELOG.md",
+    "clean": "rimraf dist",
+    "clean:all": "npm run clean && (rm -r ./node_modules || true)",
+    "cover": "nyc npm run test",
+    "dev": "ts-node index.js",
+    "cover:check": "nyc --check-coverage npm run test",
+    "coveralls": "nyc report --reporter=text-lcov | coveralls",
+    "lint": "eslint --ext .ts --fix src/**/*.ts test/**/*.ts",
+    "postversion": "git push && git push --tags",
+    "test": "mocha",
+    "upgrade": "npx npm-check -u",
+    "version": "npm run build && npm run changelog:update",
+    "start": "ts-node index.js",
+    "start:services": "ts-node services.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.7.7",
+    "axios-retry": "^4.5.0",
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.13.2",
+    "ethers-multicall-provider": "^6.4.1",
+    "express": "^4.19.2",
+    "graphql": "^16.9.0",
+    "graphql-request": "^7.1.0",
+    "http": "^0.0.1-security",
+    "lodash": "^4.17.21",
+    "nconf": "^0.12.1",
+    "node-cache": "^5.1.2",
+    "node-cron": "^3.0.3",
+    "rimraf": "5.0.5"
+  },
+  "devDependencies": {
+    "@types/body-parser": "^1.19.5",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/lodash": "^4.17.7",
+    "@types/nconf": "^0.10.7",
+    "@types/node-cron": "^3.0.11"
+  }
+}
