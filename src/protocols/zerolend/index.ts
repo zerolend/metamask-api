@@ -371,7 +371,7 @@ export const getApy = async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      reserves: _.isEmpty(finalData) ? {} : finalData,
+      reserves: _.isEmpty(response) ? {} : response,
     });
   } catch (error) {
     console.error("Error fetching APY data:", error);
