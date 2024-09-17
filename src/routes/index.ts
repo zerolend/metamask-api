@@ -1,9 +1,9 @@
 import { Router } from "express";
 
-import { getApy } from "../controller/protocols/zerolend";
+import { getApy } from "../protocols/zerolend";
 
-const router= Router()
+const router = Router();
 
-router.get('/zerolend',getApy)
+router.get("/zerolend", getApy);
 
-export default router
+export default router;

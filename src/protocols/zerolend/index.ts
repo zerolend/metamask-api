@@ -2,8 +2,8 @@ import axios from "axios";
 import { Request, Response } from "express";
 import { ethers } from "ethers";
 import _ from "lodash";
-import OracleABI from "../../abi/Oracle.json";
-import ATokenABI from "../../abi/AToken.json";
+import OracleABI from "./abi/Oracle.json";
+import ATokenABI from "./abi/AToken.json";
 import cache from "../../utils/cache";
 import { formatChain } from "../../utils/formatChain";
 import {
@@ -11,7 +11,7 @@ import {
   chainUrlParam,
   API_URLS,
   getProviderUrlForChain,
-} from "../constants";
+} from "./constant";
 
 const query = `
   query ReservesQuery {
@@ -277,6 +277,7 @@ export const apy = async () => {
 
       return {
         pool: `${pool.aToken.id}-${chain}`.toLowerCase(),
+        address: pool.aToken.id,
         chain: formatChain(chain),
         project: "zerolend",
         symbol: pool.symbol,
@@ -305,6 +306,8 @@ export const apy = async () => {
     });
   });
   const formatedPools = pools.flat().filter((p) => !!p.tvlUsd);
+  // console.log(formatedPools);
+
   cache.set("pl:apy", formatedPools, 60 * 5); //5 mins cache
   return formatedPools;
 };
@@ -348,9 +351,12 @@ export const getApy = async (req: Request, res: Response) => {
             borrowApy: isBaseToken
               ? comparePool.apyBaseBorrow
               : basePool.apyBaseBorrow,
+            aToken: isBaseToken ? basePool.symbol : comparePool.symbol,
+            vToken: isBaseToken ? comparePool.symbol : basePool.symbol,
             route: isBaseToken
               ? `${basePool.symbol} -> ${comparePool.symbol}`
               : `${comparePool.symbol} -> ${basePool.symbol}`,
+            poolAddres: isBaseToken ? comparePool.address : basePool.address,
           };
 
           response.push(temp);

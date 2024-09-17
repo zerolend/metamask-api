@@ -5,7 +5,8 @@ import nconf from "nconf";
 import cors from "cors";
 import cron from "node-cron";
 
-import { apy, zeroPrice } from "./controller/protocols/zerolend";
+import { apy, zeroPrice } from "./protocols/zerolend";
+import { getApy } from "./protocols/aave-v2";
 import routes from "./routes";
 
 const app = express();
@@ -28,6 +29,7 @@ cron.schedule("*/5 * * * *", async () => {
 });
 zeroPrice();
 apy();
+// getApy();
 // protocolPoints();
 // calculateCirculatingSupply();
 
