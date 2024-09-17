@@ -39,6 +39,9 @@ const query = `
           rewardTokenSymbol
           distributionEnd
         }
+        pool {
+          pool
+        }
       }
       symbol
       liquidityRate
@@ -277,7 +280,7 @@ export const apy = async () => {
 
       return {
         pool: `${pool.aToken.id}-${chain}`.toLowerCase(),
-        address: pool.aToken.id,
+        address: pool.vToken.pool.pool,
         chain: formatChain(chain),
         project: "zerolend",
         symbol: pool.symbol,
