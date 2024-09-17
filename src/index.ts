@@ -33,6 +33,6 @@ apy();
 // protocolPoints();
 // calculateCirculatingSupply();
 
-app.set("port", nconf.get("PORT") || 5004);
+app.set("port", nconf.get("PORT") || 5006);
 const port = app.get("port");
 server.listen(port, () => console.log(`Server started on port ${port}`));
