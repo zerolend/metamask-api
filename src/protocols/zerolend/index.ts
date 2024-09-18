@@ -294,7 +294,7 @@ export const apy = async () => {
           supplyRewardEnd * 1000 > Date.now()
             ? pool.aToken.rewards.map((rew: any) => rew.rewardToken)
             : null,
-        underlyingTokens: [pool.aToken.underlyingAssetAddress],
+        underlyingToken: pool.aToken.underlyingAssetAddress,
         totalSupplyUsd,
         totalBorrowUsd,
         apyBaseBorrow: Number(pool.variableBorrowRate) / 1e25,
@@ -360,6 +360,7 @@ export const getApy = async (req: Request, res: Response) => {
               ? `${basePool.symbol} -> ${comparePool.symbol}`
               : `${comparePool.symbol} -> ${basePool.symbol}`,
             poolAddres: isBaseToken ? comparePool.address : basePool.address,
+            borrowAddress: comparePool.underlyingToken,
           };
 
           response.push(temp);
