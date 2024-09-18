@@ -360,7 +360,9 @@ export const getApy = async (req: Request, res: Response) => {
               ? `${basePool.symbol} -> ${comparePool.symbol}`
               : `${comparePool.symbol} -> ${basePool.symbol}`,
             poolAddres: isBaseToken ? comparePool.address : basePool.address,
-            borrowAddress: comparePool.underlyingToken,
+            borrowAddress: isBaseToken
+              ? comparePool.underlyingToken
+              : basePool.underlyingToken,
           };
 
           response.push(temp);
