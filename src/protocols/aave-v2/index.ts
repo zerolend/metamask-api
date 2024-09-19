@@ -113,7 +113,7 @@ export const apy = async () => {
             symbol: symbols[i],
             address: chains[chain as keyof typeof chains].LendingPool,
             project: "aave-v2",
-            chain,
+            chain: chain.toLowerCase(),
             tvlUsd,
             apyBase,
             underlyingTokens: [t],

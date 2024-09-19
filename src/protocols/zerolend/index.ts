@@ -76,8 +76,6 @@ const getPrices = async (addresses: any) => {
 
 const fetchReserves = async (chain: string, url: string) => {
   const _chain = chain.split("_");
-  console.log(_chain, chain);
-
   try {
     const response = await axios.post(url, { query }, { headers });
     return [_chain[0], response.data.data.reserves];
@@ -189,7 +187,7 @@ export const apy = async () => {
 
         return {
           pool: `${pool.aToken.id}-${chain}`.toLowerCase(),
-          chain: formatChain(chain),
+          chain: chain.toLowerCase(),
           address: pool.vToken.pool.pool,
           project: "zerolend",
           symbol: pool.symbol,
