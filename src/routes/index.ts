@@ -1,6 +1,6 @@
 import { Router } from "express";
 
-import { getApy } from "../protocols/zerolend";
+import { getApy } from "../protocols";
 
 const router = Router();
 

@@ -3,6 +3,49 @@ export const baseUrl =
 
 export const SECONDS_PER_YEAR = 31536000;
 
+export const query = `
+  query ReservesQuery {
+    reserves(where: { name_not: "" }) {
+      name
+      borrowingEnabled
+      aToken {
+        id
+        rewards {
+          id
+          emissionsPerSecond
+          rewardToken
+          rewardTokenDecimals
+          rewardTokenSymbol
+          distributionEnd
+        }
+        underlyingAssetAddress
+        underlyingAssetDecimals
+      }
+      vToken {
+        rewards {
+          emissionsPerSecond
+          rewardToken
+          rewardTokenDecimals
+          rewardTokenSymbol
+          distributionEnd
+        }
+        pool {
+          pool
+        }
+      }
+      symbol
+      liquidityRate
+      variableBorrowRate
+      baseLTVasCollateral
+      isFrozen
+    }
+  }
+`;
+
+export const headers = {
+  "Content-Type": "application/json",
+};
+
 export const chainUrlParam: any = {
   linea: "proto_linea_v3",
   ethereum: "proto_mainnet_lrt_v3",
@@ -22,20 +65,22 @@ export const API_URLS = {
   // era: 'https://api.studio.thegraph.com/query/49970/zerolend/version/latest',
 };
 
-export const getProviderUrlForChain = (chain: string) => {
-  switch (chain) {
-    case "ethereum":
-      return "https://eth-mainnet.g.alchemy.com/v2/BV9eIvVFkPy8sUMbI_vjAr3f3htxX6NS";
-    case "linea":
-      return "https://linea-mainnet.g.alchemy.com/v2/BV9eIvVFkPy8sUMbI_vjAr3f3htxX6NS";
-    case "era":
-      return "https://zksync-mainnet.g.alchemy.com/v2/BV9eIvVFkPy8sUMbI_vjAr3f3htxX6NS";
-    case "manta":
-      return "https://pacific-rpc.manta.network/http";
-    case "blast":
-      return "https://blast-mainnet.g.alchemy.com/v2/BV9eIvVFkPy8sUMbI_vjAr3f3htxX6NS";
-    case "xlayer":
-      return "https://rpc.xlayer.tech";
-    // Add other chain provider URLs here
-  }
+export const oraclePriceABI = {
+  inputs: [
+    {
+      internalType: "address",
+      name: "asset",
+      type: "address",
+    },
+  ],
+  name: "getAssetPrice",
+  outputs: [
+    {
+      internalType: "uint256",
+      name: "",
+      type: "uint256",
+    },
+  ],
+  stateMutability: "view",
+  type: "function",
 };

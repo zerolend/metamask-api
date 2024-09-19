@@ -1,79 +1,33 @@
 import axios from "axios";
 import { Request, Response } from "express";
-import { ethers } from "ethers";
-import _ from "lodash";
-import OracleABI from "./abi/Oracle.json";
-import ATokenABI from "./abi/AToken.json";
 import { api } from "@defillama/sdk";
+import _ from "lodash";
+
+import ATokenABI from "./abi/AToken.json";
 import cache from "../../utils/cache";
 import { formatChain } from "../../utils/formatChain";
 import {
   SECONDS_PER_YEAR,
   chainUrlParam,
   API_URLS,
-  getProviderUrlForChain,
+  query,
+  headers,
+  oraclePriceABI,
 } from "./constant";
-
-const query = `
-  query ReservesQuery {
-    reserves(where: { name_not: "" }) {
-      name
-      borrowingEnabled
-      aToken {
-        id
-        rewards {
-          id
-          emissionsPerSecond
-          rewardToken
-          rewardTokenDecimals
-          rewardTokenSymbol
-          distributionEnd
-        }
-        underlyingAssetAddress
-        underlyingAssetDecimals
-      }
-      vToken {
-        rewards {
-          emissionsPerSecond
-          rewardToken
-          rewardTokenDecimals
-          rewardTokenSymbol
-          distributionEnd
-        }
-        pool {
-          pool
-        }
-      }
-      symbol
-      liquidityRate
-      variableBorrowRate
-      baseLTVasCollateral
-      isFrozen
-    }
-  }
-`;
-
-const headers = {
-  "Content-Type": "application/json",
-};
-
-export const zeroPrice = async () => {
-  const oracleAddress = "0x1cc993f2C8b6FbC43a9bafd2A44398E739733385";
-  const earlyZeroAddress = "0x3db28e471fa398bf2527135a1c559665941ee7a3";
-  const provider = new ethers.JsonRpcProvider(
-    getProviderUrlForChain("ethereum")
-  );
-  const contract = new ethers.Contract(oracleAddress, OracleABI, provider);
-  const _price = await contract.getAssetPrice(earlyZeroAddress);
-  cache.set("price:early_zero", _price, 60 * 30);
-};
 
 const getPrices = async (addresses: any) => {
   const _prices = await axios.get(
     `https://coins.llama.fi/prices/current/${addresses.join(",").toLowerCase()}`
   );
 
-  const zeroPrice = cache.get("price:early_zero");
+  const zeroPrice = (
+    await api.abi.call({
+      target: "0x1cc993f2C8b6FbC43a9bafd2A44398E739733385",
+      abi: oraclePriceABI,
+      params: ["0x3db28e471fa398bf2527135a1c559665941ee7a3"],
+      chain: "ethereum",
+    })
+  ).output;
 
   const earlyZero = {
     "era:0x9793eac2fecef55248efa039bec78e82ac01cb2f": {
@@ -102,7 +56,7 @@ const getPrices = async (addresses: any) => {
   const prices = { ..._prices.data.coins, ...earlyZero };
 
   const pricesBySymbol = Object.entries(prices).reduce(
-    (acc: any, [name, price]: any) => ({
+    (acc, [name, price]: any) => ({
       ...acc,
       [price.symbol.toLowerCase()]: price.price,
     }),
@@ -122,8 +76,6 @@ const getPrices = async (addresses: any) => {
 
 const fetchReserves = async (chain: string, url: string) => {
   const _chain = chain.split("_");
-  console.log(_chain, chain);
-
   try {
     const response = await axios.post(url, { query }, { headers });
     return [_chain[0], response.data.data.reserves];
@@ -134,213 +86,142 @@ const fetchReserves = async (chain: string, url: string) => {
 };
 
 export const apy = async () => {
-  let data = await Promise.all(
-    Object.entries(API_URLS).map(async ([chain, url]) =>
-      fetchReserves(chain, url)
-    )
-  );
-
-  data = data.map(([chain, reserves]) => [
-    chain,
-    reserves.filter((p: any) => !p.isFrozen),
-  ]);
-
-  const totalSupply = await Promise.all(
-    data.map(async ([chain, reserves]) =>
-      (
-        await api.abi.multiCall({
-          chain: chain,
-          abi: ATokenABI.find(({ name }) => name === "totalSupply"),
-          calls: reserves.map((reserve: any) => ({
-            target: reserve.aToken.id,
-          })),
-        })
-      ).output.map(({ output }: any) => output)
-    )
-  );
-
-  const underlyingBalances = await Promise.all(
-    data.map(async ([chain, reserves]) =>
-      (
-        await api.abi.multiCall({
-          chain: chain,
-          abi: ATokenABI.find(({ name }) => name === "balanceOf"),
-          calls: reserves.map((reserve: any, i: any) => ({
-            target: reserve.aToken.underlyingAssetAddress,
-            params: [reserve.aToken.id],
-          })),
-        })
-      ).output.map(({ output }: any) => output)
-    )
-  );
-
-  const underlyingTokens = data.map(([chain, reserves]) =>
-    reserves.map(
-      (pool: any) => `${chain}:${pool.aToken.underlyingAssetAddress}`
-    )
-  );
-
-  const rewardTokens = data.map(([chain, reserves]) =>
-    reserves.map((pool: any) =>
-      pool.aToken.rewards.map((rew: any) => `${chain}:${rew.rewardToken}`)
-    )
-  );
-
-  const { pricesByAddress, pricesBySymbol } = await getPrices(
-    underlyingTokens.flat().concat(rewardTokens.flat(Infinity))
-  );
-  console.log(pricesByAddress);
-
-  const pools = data.map(([chain, markets], i) => {
-    const chainPools = markets.map((pool: any, idx: any) => {
-      const supply = totalSupply[i][idx];
-      const currentSupply = underlyingBalances[i][idx];
-      const totalSupplyUsd =
-        (supply / 10 ** pool.aToken.underlyingAssetDecimals) *
-        (pricesByAddress[pool.aToken.underlyingAssetAddress] ||
-          pricesBySymbol[pool.symbol]);
-      const tvlUsd =
-        (currentSupply / 10 ** pool.aToken.underlyingAssetDecimals) *
-        (pricesByAddress[pool.aToken.underlyingAssetAddress] ||
-          pricesBySymbol[pool.symbol]);
-      const { rewards } = pool.aToken;
-
-      const rewardPerYear = rewards.reduce(
-        (acc: any, rew: any) =>
-          acc +
-          (rew.emissionsPerSecond / 10 ** rew.rewardTokenDecimals) *
-            SECONDS_PER_YEAR *
-            (pricesByAddress[rew.rewardToken] ||
-              pricesBySymbol[rew.rewardTokenSymbol] ||
-              0),
-        0
-      );
-
-      const { rewards: rewardsBorrow } = pool.vToken;
-      const rewardPerYearBorrow = rewardsBorrow.reduce(
-        (acc: any, rew: any) =>
-          acc +
-          (rew.emissionsPerSecond / 10 ** rew.rewardTokenDecimals) *
-            SECONDS_PER_YEAR *
-            (pricesByAddress[rew.rewardToken] ||
-              pricesBySymbol[rew.rewardTokenSymbol] ||
-              0),
-        0
-      );
-      let totalBorrowUsd = totalSupplyUsd - tvlUsd;
-      totalBorrowUsd = totalBorrowUsd < 0 ? 0 : totalBorrowUsd;
-
-      const supplyRewardEnd = pool.aToken.rewards[0]?.distributionEnd;
-      const borrowRewardEnd = pool.vToken.rewards[0]?.distributionEnd;
-
-      return {
-        pool: `${pool.aToken.id}-${chain}`.toLowerCase(),
-        chain: formatChain(chain),
-        address: pool.vToken.pool.pool,
-        project: "zerolend",
-        symbol: pool.symbol,
-        tvlUsd,
-        apyBase: (pool.liquidityRate / 10 ** 27) * 100,
-        apyReward:
-          supplyRewardEnd * 1000 > Date.now()
-            ? (rewardPerYear / totalSupplyUsd) * 100
-            : null,
-        rewardTokens:
-          supplyRewardEnd * 1000 > Date.now()
-            ? rewards.map((rew: any) => rew.rewardToken)
-            : null,
-        underlyingTokens: [pool.aToken.underlyingAssetAddress],
-        totalSupplyUsd,
-        totalBorrowUsd,
-        apyBaseBorrow: Number(pool.variableBorrowRate) / 1e25,
-        apyRewardBorrow:
-          borrowRewardEnd * 1000 > Date.now()
-            ? (rewardPerYearBorrow / totalBorrowUsd) * 100
-            : null,
-        ltv: Number(pool.baseLTVasCollateral) / 10000,
-        url: `https://app.zerolend.xyz/reserve-overview/?underlyingAsset=${pool.aToken.underlyingAssetAddress}&marketName=${chainUrlParam[chain]}&utm_source=defillama&utm_medium=listing&utm_campaign=external`,
-        borrowable: pool.borrowingEnabled,
-      };
-    });
-    return chainPools;
-  });
-  const formatedPools = pools.flat().filter((p: any) => !!p.tvlUsd);
-  console.log(formatedPools);
-
-  cache.set("pl:zerolend", formatedPools, 60 * 5); //5 mins cache
-  return formatedPools;
-  // return pools.flat().filter((p) => !!p.tvlUsd);
-};
-
-export const getApy = async (req: Request, res: Response) => {
   try {
-    const queryParams = req.query as { aToken?: string; vToken?: string };
-    const cachePoolData: any = cache.get("pl:zerolend");
-
-    if (!cachePoolData) {
-      return res.json({ success: false, message: "No data available" });
-    }
-
-    const aToken = queryParams.aToken?.toLowerCase() || "";
-    const vToken = queryParams.vToken?.toLowerCase() || "";
-
-    const filteredData = cachePoolData.filter(
-      (data: any) =>
-        data.borrowable &&
-        (data.symbol.toLowerCase().includes(aToken) ||
-          data.symbol.toLowerCase().includes(vToken))
+    let data = await Promise.all(
+      Object.entries(API_URLS).map(async ([chain, url]) =>
+        fetchReserves(chain, url)
+      )
     );
 
-    const groupedByChain = _.groupBy(filteredData, "chain");
-    const finalData = _.pickBy(groupedByChain, (pools) => pools.length > 1);
+    data = data.map(([chain, reserves]) => [
+      chain,
+      reserves.filter((p: any) => !p.isFrozen),
+    ]);
 
-    const response: any[] = [];
+    const totalSupply = await Promise.all(
+      data.map(async ([chain, reserves]) =>
+        (
+          await api.abi.multiCall({
+            chain: chain,
+            abi: ATokenABI.find(({ name }) => name === "totalSupply"),
+            calls: reserves.map((reserve: any) => ({
+              target: reserve.aToken.id,
+            })),
+          })
+        ).output.map(({ output }: any) => output)
+      )
+    );
 
-    _.forEach(finalData, (poolData, chain) => {
-      for (let i = 0; i < poolData.length; i++) {
-        const basePool = poolData[i];
+    const underlyingBalances = await Promise.all(
+      data.map(async ([chain, reserves]) =>
+        (
+          await api.abi.multiCall({
+            chain: chain,
+            abi: ATokenABI.find(({ name }) => name === "balanceOf"),
+            calls: reserves.map((reserve: any, i: any) => ({
+              target: reserve.aToken.underlyingAssetAddress,
+              params: [reserve.aToken.id],
+            })),
+          })
+        ).output.map(({ output }: any) => output)
+      )
+    );
 
-        for (let j = i + 1; j < poolData.length; j++) {
-          const comparePool = poolData[j];
-          const isAToken = basePool.symbol.toLowerCase().includes(aToken);
-          const isVToken = comparePool.symbol.toLowerCase().includes(vToken);
-          console.log(isAToken, basePool.symbol.toLowerCase(), aToken);
-          if (isAToken && isVToken) {
-            const temp = {
-              project: basePool.project,
-              chain: basePool.chain,
-              ltv: isAToken ? basePool.ltv : comparePool.ltv,
-              borrowApy: isAToken
-                ? comparePool.apyBaseBorrow
-                : basePool.apyBaseBorrow,
-              aToken: isAToken ? basePool.symbol : comparePool.symbol,
-              vToken: isAToken ? comparePool.symbol : basePool.symbol,
-              route: isAToken
-                ? `${basePool.symbol} -> ${comparePool.symbol}`
-                : `${comparePool.symbol} -> ${basePool.symbol}`,
-              poolAddres: isAToken ? comparePool.address : basePool.address,
-              debtAddress: isAToken
-                ? comparePool.underlyingTokens[0]
-                : basePool.underlyingTokens[0],
-              collateralAddress: isAToken
-                ? basePool.underlyingTokens[0]
-                : comparePool.underlyingTokens[0],
-            };
-            response.push(temp);
-          }
-        }
-      }
+    const underlyingTokens = data.map(([chain, reserves]) =>
+      reserves.map(
+        (pool: any) => `${chain}:${pool.aToken.underlyingAssetAddress}`
+      )
+    );
+
+    const rewardTokens = data.map(([chain, reserves]) =>
+      reserves.map((pool: any) =>
+        pool.aToken.rewards.map((rew: any) => `${chain}:${rew.rewardToken}`)
+      )
+    );
+
+    const { pricesByAddress, pricesBySymbol }: any = await getPrices(
+      underlyingTokens.flat().concat(rewardTokens.flat(Infinity))
+    );
+
+    const pools = data.map(([chain, markets], i) => {
+      const chainPools = markets.map((pool: any, idx: any) => {
+        const supply = totalSupply[i][idx];
+        const currentSupply = underlyingBalances[i][idx];
+        const totalSupplyUsd =
+          (supply / 10 ** pool.aToken.underlyingAssetDecimals) *
+          (pricesByAddress[pool.aToken.underlyingAssetAddress] ||
+            pricesBySymbol[pool.symbol]);
+        const tvlUsd =
+          (currentSupply / 10 ** pool.aToken.underlyingAssetDecimals) *
+          (pricesByAddress[pool.aToken.underlyingAssetAddress] ||
+            pricesBySymbol[pool.symbol]);
+        const { rewards } = pool.aToken;
+
+        const rewardPerYear = rewards.reduce(
+          (acc: any, rew: any) =>
+            acc +
+            (rew.emissionsPerSecond / 10 ** rew.rewardTokenDecimals) *
+              SECONDS_PER_YEAR *
+              (pricesByAddress[rew.rewardToken] ||
+                pricesBySymbol[rew.rewardTokenSymbol] ||
+                0),
+          0
+        );
+
+        const { rewards: rewardsBorrow } = pool.vToken;
+        const rewardPerYearBorrow = rewardsBorrow.reduce(
+          (acc: any, rew: any) =>
+            acc +
+            (rew.emissionsPerSecond / 10 ** rew.rewardTokenDecimals) *
+              SECONDS_PER_YEAR *
+              (pricesByAddress[rew.rewardToken] ||
+                pricesBySymbol[rew.rewardTokenSymbol] ||
+                0),
+          0
+        );
+        let totalBorrowUsd = totalSupplyUsd - tvlUsd;
+        totalBorrowUsd = totalBorrowUsd < 0 ? 0 : totalBorrowUsd;
+
+        const supplyRewardEnd = pool.aToken.rewards[0]?.distributionEnd;
+        const borrowRewardEnd = pool.vToken.rewards[0]?.distributionEnd;
+
+        return {
+          pool: `${pool.aToken.id}-${chain}`.toLowerCase(),
+          chain: formatChain(chain),
+          address: pool.vToken.pool.pool,
+          project: "zerolend",
+          symbol: pool.symbol,
+          tvlUsd,
+          apyBase: (pool.liquidityRate / 10 ** 27) * 100,
+          apyReward:
+            supplyRewardEnd * 1000 > Date.now()
+              ? (rewardPerYear / totalSupplyUsd) * 100
+              : null,
+          rewardTokens:
+            supplyRewardEnd * 1000 > Date.now()
+              ? rewards.map((rew: any) => rew.rewardToken)
+              : null,
+          underlyingTokens: [pool.aToken.underlyingAssetAddress],
+          totalSupplyUsd,
+          totalBorrowUsd,
+          apyBaseBorrow: Number(pool.variableBorrowRate) / 1e25,
+          apyRewardBorrow:
+            borrowRewardEnd * 1000 > Date.now()
+              ? (rewardPerYearBorrow / totalBorrowUsd) * 100
+              : null,
+          ltv: Number(pool.baseLTVasCollateral) / 10000,
+          url: `https://app.zerolend.xyz/reserve-overview/?underlyingAsset=${pool.aToken.underlyingAssetAddress}&marketName=${chainUrlParam[chain]}&utm_source=defillama&utm_medium=listing&utm_campaign=external`,
+          borrowable: pool.borrowingEnabled,
+        };
+      });
+      return chainPools;
     });
-
-    console.log(response);
-
-    res.json({
-      success: true,
-      reserves: _.isEmpty(response) ? {} : response,
-    });
-  } catch (error) {
-    console.error("Error fetching APY data:", error);
-    res.status(500).json({ success: false, message: "Internal server error" });
+    const formatedPools = pools.flat().filter((p: any) => !!p.tvlUsd);
+    cache.set("apy:zerolend", formatedPools, 60 * 5); //5 mins cache
+    return formatedPools;
+    // return pools.flat().filter((p) => !!p.tvlUsd);}
+  } catch (e) {
+    console.log(e);
   }
 };
 

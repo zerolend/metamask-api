@@ -5,8 +5,8 @@ import nconf from "nconf";
 import cors from "cors";
 import cron from "node-cron";
 
-import { apy, zeroPrice } from "./protocols/zerolend";
-import { getApy } from "./protocols/aave-v2";
+import { apy as zerolendApy } from "./protocols/zerolend";
+import { apy as aave_v2Apy } from "./protocols/aave-v2";
 import routes from "./routes";
 
 const app = express();
@@ -18,17 +18,13 @@ app.use(bodyParser.urlencoded({ extended: false }));
 
 app.use(routes);
 
-cron.schedule("*/30 * * * *", async () => {
-  console.log("update metrics every 30 mins");
-  await zeroPrice();
+cron.schedule("*/10 * * * *", async () => {
+  console.log("fetch updated pools data every 10 mins");
+  await zerolendApy();
+  await aave_v2Apy();
 });
-
-cron.schedule("*/5 * * * *", async () => {
-  console.log("fetch updated pools data every 5 mins");
-  await apy();
-});
-zeroPrice();
-apy();
+zerolendApy();
+aave_v2Apy();
 // getApy();
 // protocolPoints();
 // calculateCirculatingSupply();
