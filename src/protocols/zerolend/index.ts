@@ -76,6 +76,8 @@ const getPrices = async (addresses: any) => {
 
 const fetchReserves = async (chain: string, url: string) => {
   const _chain = chain.split("_");
+  console.log(_chain, chain);
+
   try {
     const response = await axios.post(url, { query }, { headers });
     return [_chain[0], response.data.data.reserves];
