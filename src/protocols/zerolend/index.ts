@@ -4,6 +4,7 @@ import { ethers } from "ethers";
 import _ from "lodash";
 import OracleABI from "./abi/Oracle.json";
 import ATokenABI from "./abi/AToken.json";
+import { api } from "@defillama/sdk";
 import cache from "../../utils/cache";
 import { formatChain } from "../../utils/formatChain";
 import {
@@ -119,82 +120,16 @@ const getPrices = async (addresses: any) => {
   return { pricesByAddress, pricesBySymbol };
 };
 
-// supply
-const fetchTotalSupplyForChain = async (
-  chainProviderUrl: any,
-  reserves: any,
-  aTokenAbi: any
-) => {
-  const provider = new ethers.JsonRpcProvider(chainProviderUrl);
-  const totalSupplyPromises = reserves.map(async (reserve: any) => {
-    const aTokenContract = new ethers.Contract(
-      reserve.aToken.id,
-      aTokenAbi,
-      provider
-    );
-    const totalSupply = await aTokenContract.totalSupply();
-    return totalSupply;
-  });
-
-  const totalSupplies = await Promise.all(totalSupplyPromises);
-  return totalSupplies.map((supply) => supply.toString()); // Convert BigNumbers to strings
-};
-
-const getTotalSupplyForAllChains = async (data: any, aTokenAbi: any) => {
-  const totalSupplyPromises = data.map(async ([chain, reserves]: any) => {
-    const chainProviderUrl = getProviderUrlForChain(chain);
-    return await fetchTotalSupplyForChain(
-      chainProviderUrl,
-      reserves,
-      aTokenAbi
-    );
-  });
-  const totalSupplies = await Promise.all(totalSupplyPromises);
-  return totalSupplies.flat(); // Flatten the array of arrays into a single array
-};
-
-//underlying balance
-const fetchUnderlyingBalancesForChain = async (
-  chainProviderUrl: any,
-  reserves: any,
-  aTokenAbi: any
-) => {
-  const provider = new ethers.JsonRpcProvider(chainProviderUrl);
-  // Create an array of balanceOf calls for each reserve's underlying asset
-  const balanceOfPromises = reserves.map(async (reserve: any) => {
-    const underlyingAssetContract = new ethers.Contract(
-      reserve.aToken.underlyingAssetAddress,
-      aTokenAbi,
-      provider
-    );
-    const balance = await underlyingAssetContract.balanceOf(reserve.aToken.id);
-    return balance.toString();
-  });
-  const underlyingBalances = await Promise.all(balanceOfPromises);
-  return underlyingBalances;
-};
-
-const getUnderlyingBalancesForAllChains = async (data: any, aTokenAbi: any) => {
-  const underlyingBalancePromises = data.map(async ([chain, reserves]: any) => {
-    const chainProviderUrl = getProviderUrlForChain(chain);
-    return await fetchUnderlyingBalancesForChain(
-      chainProviderUrl,
-      reserves,
-      aTokenAbi
-    );
-  });
-
-  const underlyingBalances = await Promise.all(underlyingBalancePromises);
-  return underlyingBalances.flat(); // Flatten array of arrays into a single array
-};
-
 const fetchReserves = async (chain: string, url: string) => {
+  const _chain = chain.split("_");
+  console.log(_chain, chain);
+
   try {
     const response = await axios.post(url, { query }, { headers });
-    return [chain, response.data.data.reserves];
+    return [_chain[0], response.data.data.reserves];
   } catch (error) {
     console.error(`Error fetching data from ${chain}:`, error);
-    return [chain, []]; // Return empty array on error
+    return [_chain[0], []]; // Return empty array on error
   }
 };
 
@@ -209,48 +144,68 @@ export const apy = async () => {
     chain,
     reserves.filter((p: any) => !p.isFrozen),
   ]);
-  const [totalSupply, underlyingBalances] = await Promise.all([
-    getTotalSupplyForAllChains(data, ATokenABI),
-    getUnderlyingBalancesForAllChains(data, ATokenABI),
-  ]);
 
-  const underlyingTokens = _.flatten(
-    data.map(([chain, reserves]) =>
-      reserves.map(
-        (pool: any) => `${chain}:${pool.aToken.underlyingAssetAddress}`
-      )
+  const totalSupply = await Promise.all(
+    data.map(async ([chain, reserves]) =>
+      (
+        await api.abi.multiCall({
+          chain: chain,
+          abi: ATokenABI.find(({ name }) => name === "totalSupply"),
+          calls: reserves.map((reserve: any) => ({
+            target: reserve.aToken.id,
+          })),
+        })
+      ).output.map(({ output }: any) => output)
     )
   );
 
-  const rewardTokens = _.flatten(
-    data.map(([chain, reserves]) =>
-      reserves.flatMap((pool: any) =>
-        pool.aToken.rewards.map((rew: any) => `${chain}:${rew.rewardToken}`)
-      )
+  const underlyingBalances = await Promise.all(
+    data.map(async ([chain, reserves]) =>
+      (
+        await api.abi.multiCall({
+          chain: chain,
+          abi: ATokenABI.find(({ name }) => name === "balanceOf"),
+          calls: reserves.map((reserve: any, i: any) => ({
+            target: reserve.aToken.underlyingAssetAddress,
+            params: [reserve.aToken.id],
+          })),
+        })
+      ).output.map(({ output }: any) => output)
     )
   );
 
-  const { pricesByAddress, pricesBySymbol } = await getPrices([
-    ...underlyingTokens,
-    ...rewardTokens,
-  ]);
+  const underlyingTokens = data.map(([chain, reserves]) =>
+    reserves.map(
+      (pool: any) => `${chain}:${pool.aToken.underlyingAssetAddress}`
+    )
+  );
+
+  const rewardTokens = data.map(([chain, reserves]) =>
+    reserves.map((pool: any) =>
+      pool.aToken.rewards.map((rew: any) => `${chain}:${rew.rewardToken}`)
+    )
+  );
+
+  const { pricesByAddress, pricesBySymbol } = await getPrices(
+    underlyingTokens.flat().concat(rewardTokens.flat(Infinity))
+  );
+  console.log(pricesByAddress);
 
   const pools = data.map(([chain, markets], i) => {
-    return markets.map((pool: any) => {
-      const supply = totalSupply[i][markets.indexOf(pool)];
-      const currentSupply = underlyingBalances[i][markets.indexOf(pool)];
-      const decimals = 10 ** pool.aToken.underlyingAssetDecimals;
-
+    const chainPools = markets.map((pool: any, idx: any) => {
+      const supply = totalSupply[i][idx];
+      const currentSupply = underlyingBalances[i][idx];
       const totalSupplyUsd =
-        (supply / decimals) *
+        (supply / 10 ** pool.aToken.underlyingAssetDecimals) *
         (pricesByAddress[pool.aToken.underlyingAssetAddress] ||
           pricesBySymbol[pool.symbol]);
       const tvlUsd =
-        (currentSupply / decimals) *
+        (currentSupply / 10 ** pool.aToken.underlyingAssetDecimals) *
         (pricesByAddress[pool.aToken.underlyingAssetAddress] ||
           pricesBySymbol[pool.symbol]);
+      const { rewards } = pool.aToken;
 
-      const rewardPerYear = pool.aToken.rewards.reduce(
+      const rewardPerYear = rewards.reduce(
         (acc: any, rew: any) =>
           acc +
           (rew.emissionsPerSecond / 10 ** rew.rewardTokenDecimals) *
@@ -261,7 +216,8 @@ export const apy = async () => {
         0
       );
 
-      const rewardPerYearBorrow = pool.vToken.rewards.reduce(
+      const { rewards: rewardsBorrow } = pool.vToken;
+      const rewardPerYearBorrow = rewardsBorrow.reduce(
         (acc: any, rew: any) =>
           acc +
           (rew.emissionsPerSecond / 10 ** rew.rewardTokenDecimals) *
@@ -271,17 +227,16 @@ export const apy = async () => {
               0),
         0
       );
-
       let totalBorrowUsd = totalSupplyUsd - tvlUsd;
-      totalBorrowUsd = Math.max(totalBorrowUsd, 0);
+      totalBorrowUsd = totalBorrowUsd < 0 ? 0 : totalBorrowUsd;
 
       const supplyRewardEnd = pool.aToken.rewards[0]?.distributionEnd;
       const borrowRewardEnd = pool.vToken.rewards[0]?.distributionEnd;
 
       return {
         pool: `${pool.aToken.id}-${chain}`.toLowerCase(),
-        address: pool.vToken.pool.pool,
         chain: formatChain(chain),
+        address: pool.vToken.pool.pool,
         project: "zerolend",
         symbol: pool.symbol,
         tvlUsd,
@@ -292,9 +247,9 @@ export const apy = async () => {
             : null,
         rewardTokens:
           supplyRewardEnd * 1000 > Date.now()
-            ? pool.aToken.rewards.map((rew: any) => rew.rewardToken)
+            ? rewards.map((rew: any) => rew.rewardToken)
             : null,
-        underlyingToken: pool.aToken.underlyingAssetAddress,
+        underlyingTokens: [pool.aToken.underlyingAssetAddress],
         totalSupplyUsd,
         totalBorrowUsd,
         apyBaseBorrow: Number(pool.variableBorrowRate) / 1e25,
@@ -307,18 +262,20 @@ export const apy = async () => {
         borrowable: pool.borrowingEnabled,
       };
     });
+    return chainPools;
   });
-  const formatedPools = pools.flat().filter((p) => !!p.tvlUsd);
-  // console.log(formatedPools);
+  const formatedPools = pools.flat().filter((p: any) => !!p.tvlUsd);
+  console.log(formatedPools);
 
-  cache.set("pl:apy", formatedPools, 60 * 5); //5 mins cache
+  cache.set("pl:zerolend", formatedPools, 60 * 5); //5 mins cache
   return formatedPools;
+  // return pools.flat().filter((p) => !!p.tvlUsd);
 };
 
 export const getApy = async (req: Request, res: Response) => {
   try {
     const queryParams = req.query as { aToken?: string; vToken?: string };
-    const cachePoolData: any = cache.get("pl:apy");
+    const cachePoolData: any = cache.get("pl:zerolend");
 
     if (!cachePoolData) {
       return res.json({ success: false, message: "No data available" });
@@ -345,30 +302,32 @@ export const getApy = async (req: Request, res: Response) => {
 
         for (let j = i + 1; j < poolData.length; j++) {
           const comparePool = poolData[j];
-          const isBaseToken = basePool.symbol.toLowerCase().includes(aToken);
-
-          const temp = {
-            project: basePool.project,
-            chain: basePool.chain,
-            ltv: isBaseToken ? basePool.ltv : comparePool.ltv,
-            borrowApy: isBaseToken
-              ? comparePool.apyBaseBorrow
-              : basePool.apyBaseBorrow,
-            aToken: isBaseToken ? basePool.symbol : comparePool.symbol,
-            vToken: isBaseToken ? comparePool.symbol : basePool.symbol,
-            route: isBaseToken
-              ? `${basePool.symbol} -> ${comparePool.symbol}`
-              : `${comparePool.symbol} -> ${basePool.symbol}`,
-            poolAddres: isBaseToken ? comparePool.address : basePool.address,
-            debtAddress: isBaseToken
-              ? comparePool.underlyingToken
-              : basePool.underlyingToken,
-            collateralAddress: isBaseToken
-              ? basePool.underlyingToken
-              : comparePool.underlyingToken,
-          };
-
-          response.push(temp);
+          const isAToken = basePool.symbol.toLowerCase().includes(aToken);
+          const isVToken = comparePool.symbol.toLowerCase().includes(vToken);
+          console.log(isAToken, basePool.symbol.toLowerCase(), aToken);
+          if (isAToken && isVToken) {
+            const temp = {
+              project: basePool.project,
+              chain: basePool.chain,
+              ltv: isAToken ? basePool.ltv : comparePool.ltv,
+              borrowApy: isAToken
+                ? comparePool.apyBaseBorrow
+                : basePool.apyBaseBorrow,
+              aToken: isAToken ? basePool.symbol : comparePool.symbol,
+              vToken: isAToken ? comparePool.symbol : basePool.symbol,
+              route: isAToken
+                ? `${basePool.symbol} -> ${comparePool.symbol}`
+                : `${comparePool.symbol} -> ${basePool.symbol}`,
+              poolAddres: isAToken ? comparePool.address : basePool.address,
+              debtAddress: isAToken
+                ? comparePool.underlyingTokens[0]
+                : basePool.underlyingTokens[0],
+              collateralAddress: isAToken
+                ? basePool.underlyingTokens[0]
+                : comparePool.underlyingTokens[0],
+            };
+            response.push(temp);
+          }
         }
       }
     });
@@ -385,18 +344,188 @@ export const getApy = async (req: Request, res: Response) => {
   }
 };
 
-//----------------- to do -----------------
-// collateral asset //
-// debt asset //stable conins
-// amount
-// chain
+// // supply
+// const fetchTotalSupplyForChain = async (
+//   chainProviderUrl: any,
+//   reserves: any,
+//   aTokenAbi: any
+// ) => {
+//   const provider = new ethers.JsonRpcProvider(chainProviderUrl);
+//   const totalSupplyPromises = reserves.map(async (reserve: any) => {
+//     const aTokenContract = new ethers.Contract(
+//       reserve.aToken.id,
+//       aTokenAbi,
+//       provider
+//     );
+//     const totalSupply = await aTokenContract.totalSupply();
+//     return totalSupply;
+//   });
 
-// get ltv for every pool
+//   const totalSupplies = await Promise.all(totalSupplyPromises);
+//   return totalSupplies.map((supply) => supply.toString()); // Convert BigNumbers to strings
+// };
 
-// if the ltv is >0 can be use for collateral
-// if borrow apy>0
+// const getTotalSupplyForAllChains = async (data: any, aTokenAbi: any) => {
+//   const totalSupplyPromises = data.map(async ([chain, reserves]: any) => {
+//     const chainProviderUrl = getProviderUrlForChain(chain);
+//     return await fetchTotalSupplyForChain(
+//       chainProviderUrl,
+//       reserves,
+//       aTokenAbi
+//     );
+//   });
+//   const totalSupplies = await Promise.all(totalSupplyPromises);
+//   return totalSupplies.flat(); // Flatten the array of arrays into a single array
+// };
 
-//net borrow apy - debt
-//availbale -collateral
-//ltv-collateral
-//supply and borrow- collateral
+// //underlying balance
+// const fetchUnderlyingBalancesForChain = async (
+//   chainProviderUrl: any,
+//   reserves: any,
+//   aTokenAbi: any
+// ) => {
+//   const provider = new ethers.JsonRpcProvider(chainProviderUrl);
+//   // Create an array of balanceOf calls for each reserve's underlying asset
+//   const balanceOfPromises = reserves.map(async (reserve: any) => {
+//     const underlyingAssetContract = new ethers.Contract(
+//       reserve.aToken.underlyingAssetAddress,
+//       aTokenAbi,
+//       provider
+//     );
+//     const balance = await underlyingAssetContract.balanceOf(reserve.aToken.id);
+//     return balance.toString();
+//   });
+//   const underlyingBalances = await Promise.all(balanceOfPromises);
+//   return underlyingBalances;
+// };
+
+// const getUnderlyingBalancesForAllChains = async (data: any, aTokenAbi: any) => {
+//   const underlyingBalancePromises = data.map(async ([chain, reserves]: any) => {
+//     const chainProviderUrl = getProviderUrlForChain(chain);
+//     return await fetchUnderlyingBalancesForChain(
+//       chainProviderUrl,
+//       reserves,
+//       aTokenAbi
+//     );
+//   });
+
+//   const underlyingBalances = await Promise.all(underlyingBalancePromises);
+//   return underlyingBalances.flat(); // Flatten array of arrays into a single array
+// };
+
+// export const apy = async () => {
+//   let data = await Promise.all(
+//     Object.entries(API_URLS).map(async ([chain, url]) =>
+//       fetchReserves(chain, url)
+//     )
+//   );
+
+//   data = data.map(([chain, reserves]) => [
+//     chain,
+//     reserves.filter((p: any) => !p.isFrozen),
+//   ]);
+//   const [totalSupply, underlyingBalances] = await Promise.all([
+//     getTotalSupplyForAllChains(data, ATokenABI),
+//     getUnderlyingBalancesForAllChains(data, ATokenABI),
+//   ]);
+
+//   const underlyingTokens = _.flatten(
+//     data.map(([chain, reserves]) =>
+//       reserves.map(
+//         (pool: any) => `${chain}:${pool.aToken.underlyingAssetAddress}`
+//       )
+//     )
+//   );
+
+//   const rewardTokens = _.flatten(
+//     data.map(([chain, reserves]) =>
+//       reserves.flatMap((pool: any) =>
+//         pool.aToken.rewards.map((rew: any) => `${chain}:${rew.rewardToken}`)
+//       )
+//     )
+//   );
+
+//   const { pricesByAddress, pricesBySymbol } = await getPrices([
+//     ...underlyingTokens,
+//     ...rewardTokens,
+//   ]);
+
+//   const pools = data.map(([chain, markets], i) => {
+//     return markets.map((pool: any) => {
+//       const supply = totalSupply[i][markets.indexOf(pool)];
+//       const currentSupply = underlyingBalances[i][markets.indexOf(pool)];
+//       const decimals = 10 ** pool.aToken.underlyingAssetDecimals;
+
+//       const totalSupplyUsd =
+//         (supply / decimals) *
+//         (pricesByAddress[pool.aToken.underlyingAssetAddress] ||
+//           pricesBySymbol[pool.symbol]);
+//       const tvlUsd =
+//         (currentSupply / decimals) *
+//         (pricesByAddress[pool.aToken.underlyingAssetAddress] ||
+//           pricesBySymbol[pool.symbol]);
+
+//       const rewardPerYear = pool.aToken.rewards.reduce(
+//         (acc: any, rew: any) =>
+//           acc +
+//           (rew.emissionsPerSecond / 10 ** rew.rewardTokenDecimals) *
+//             SECONDS_PER_YEAR *
+//             (pricesByAddress[rew.rewardToken] ||
+//               pricesBySymbol[rew.rewardTokenSymbol] ||
+//               0),
+//         0
+//       );
+
+//       const rewardPerYearBorrow = pool.vToken.rewards.reduce(
+//         (acc: any, rew: any) =>
+//           acc +
+//           (rew.emissionsPerSecond / 10 ** rew.rewardTokenDecimals) *
+//             SECONDS_PER_YEAR *
+//             (pricesByAddress[rew.rewardToken] ||
+//               pricesBySymbol[rew.rewardTokenSymbol] ||
+//               0),
+//         0
+//       );
+
+//       let totalBorrowUsd = totalSupplyUsd - tvlUsd;
+//       totalBorrowUsd = Math.max(totalBorrowUsd, 0);
+
+//       const supplyRewardEnd = pool.aToken.rewards[0]?.distributionEnd;
+//       const borrowRewardEnd = pool.vToken.rewards[0]?.distributionEnd;
+
+//       return {
+//         pool: `${pool.aToken.id}-${chain}`.toLowerCase(),
+//         address: pool.vToken.pool.pool,
+//         chain: formatChain(chain),
+//         project: "zerolend",
+//         symbol: pool.symbol,
+//         tvlUsd,
+//         apyBase: (pool.liquidityRate / 10 ** 27) * 100,
+//         apyReward:
+//           supplyRewardEnd * 1000 > Date.now()
+//             ? (rewardPerYear / totalSupplyUsd) * 100
+//             : null,
+//         rewardTokens:
+//           supplyRewardEnd * 1000 > Date.now()
+//             ? pool.aToken.rewards.map((rew: any) => rew.rewardToken)
+//             : null,
+//         underlyingToken: pool.aToken.underlyingAssetAddress,
+//         totalSupplyUsd,
+//         totalBorrowUsd,
+//         apyBaseBorrow: Number(pool.variableBorrowRate) / 1e25,
+//         apyRewardBorrow:
+//           borrowRewardEnd * 1000 > Date.now()
+//             ? (rewardPerYearBorrow / totalBorrowUsd) * 100
+//             : null,
+//         ltv: Number(pool.baseLTVasCollateral) / 10000,
+//         url: `https://app.zerolend.xyz/reserve-overview/?underlyingAsset=${pool.aToken.underlyingAssetAddress}&marketName=${chainUrlParam[chain]}&utm_source=defillama&utm_medium=listing&utm_campaign=external`,
+//         borrowable: pool.borrowingEnabled,
+//       };
+//     });
+//   });
+//   const formatedPools = pools.flat().filter((p) => !!p.tvlUsd);
+//   // console.log(formatedPools);
+
+//   cache.set("pl:apy", formatedPools, 60 * 5); //5 mins cache
+//   return formatedPools;
+// };

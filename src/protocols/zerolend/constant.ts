@@ -15,6 +15,9 @@ export const API_URLS = {
   era: baseUrl + "zerolend-zksync/1.0.0/gn",
   manta: baseUrl + "zerolend-m/1.0.0/gn",
   blast: baseUrl + "zerolend-blast/1.0.1/gn",
+  ethereum_btc: baseUrl + "zerolend-mainnet-btc/1.0.0/gn",
+  linea_croak: baseUrl + "zerolend-linea-croak/1.0.0/gn",
+  linea_foxy: baseUrl + "zerolend-linea-foxy/1.0.0/gn",
   // xlayer: baseUrl + "zerolend-xlayer/1.0.0/gn",
   // era: 'https://api.studio.thegraph.com/query/49970/zerolend/version/latest',
 };
