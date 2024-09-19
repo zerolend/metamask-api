@@ -217,7 +217,7 @@ export const apy = async () => {
       return chainPools;
     });
     const formatedPools = pools.flat().filter((p: any) => !!p.tvlUsd);
-    cache.set("apy:zerolend", formatedPools, 60 * 5); //5 mins cache
+    cache.set("apy:zerolend", formatedPools, 60 * 30); //5 mins cache
     return formatedPools;
     // return pools.flat().filter((p) => !!p.tvlUsd);}
   } catch (e) {

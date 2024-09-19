@@ -130,7 +130,7 @@ export const apy = async () => {
       })
     );
     const formatedPools = pools.flat().filter((p) => keepFinite(p));
-    cache.set("apy:aave-v2", formatedPools, 60 * 5); //5 mins cache
+    cache.set("apy:aave-v2", formatedPools, 60 * 30); //5 mins cache
     return formatedPools;
   } catch (e) {
     console.log(e);
