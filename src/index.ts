@@ -6,7 +6,8 @@ import cors from "cors";
 import cron from "node-cron";
 
 import { apy as zerolendApy } from "./protocols/zerolend";
-import { apy as aave_v2Apy } from "./protocols/aave-v2";
+// import { apy as aave_v2Apy } from "./protocols/aave-v2";
+import { apy as aave_v3Apy } from "./protocols/aave-v3";
 import routes from "./routes";
 
 const app = express();
@@ -21,13 +22,13 @@ app.use(routes);
 cron.schedule("*/10 * * * *", async () => {
   console.log("fetch updated pools data every 10 mins");
   await zerolendApy();
-  await aave_v2Apy();
+  // await aave_v2Apy();
+  await aave_v3Apy();
 });
+
 zerolendApy();
-aave_v2Apy();
-// getApy();
-// protocolPoints();
-// calculateCirculatingSupply();
+// aave_v2Apy();
+aave_v3Apy();
 
 app.set("port", nconf.get("PORT") || 5006);
 const port = app.get("port");
