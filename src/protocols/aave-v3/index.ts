@@ -141,6 +141,7 @@ const getApy = async (chain: keyof typeof protocolDataProviders) => {
         chain === "avax" ? "avalanche" : chain
       }`.toLowerCase(),
       address: poolAddress,
+      price,
       chain,
       project: "aave-v3",
       symbol: pool.symbol,
@@ -208,6 +209,7 @@ const stkGho = async () => {
   const pool = {
     pool: `${STKGHO}-ethereum`.toLowerCase(),
     chain: "Ethereum",
+    price: ghoPrice,
     project: "aave-v3",
     symbol: "GHO",
     tvlUsd: stkghoSupply * ghoPrice,

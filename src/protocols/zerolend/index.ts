@@ -194,6 +194,8 @@ export const apy = async () => {
           address: pool.vToken.pool.pool,
           project: "zerolend",
           symbol: pool.symbol,
+          price: (pricesByAddress[pool.aToken.underlyingAssetAddress] ||
+            pricesBySymbol[pool.symbol]),
           tvlUsd,
           apyBase: (pool.liquidityRate / 10 ** 27) * 100,
           apyReward:

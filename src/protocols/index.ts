@@ -48,6 +48,8 @@ export const getApy = async (req: Request, res: Response) => {
                 : basePool.apyBaseBorrow,
               aToken: isAToken ? basePool.symbol : comparePool.symbol,
               vToken: isAToken ? comparePool.symbol : basePool.symbol,
+              aToken_price: isAToken ? basePool.price : comparePool.price,
+              vToken_price: isAToken ? comparePool.price : basePool.price,
               route: isAToken
                 ? `${basePool.symbol} -> ${comparePool.symbol}`
                 : `${comparePool.symbol} -> ${basePool.symbol}`,
