@@ -34,7 +34,7 @@ export const getApy = async (req: Request, res: Response) => {
       for (let i = 0; i < poolData.length; i++) {
         const basePool = poolData[i];
 
-        for (let j = i + 1; j < poolData.length; j++) {
+        for (let j = 0; j < poolData.length; j++) {
           const comparePool = poolData[j];
           const isAToken = basePool.symbol.toLowerCase().includes(aToken);
           const isVToken = comparePool.symbol.toLowerCase().includes(vToken);

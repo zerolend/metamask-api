@@ -75,13 +75,13 @@ const getPrices = async (addresses: any) => {
 };
 
 const fetchReserves = async (chain: string, url: string) => {
-  const _chain = chain.split("_");
+  // const _chain = chain.split("_");
   try {
     const response = await axios.post(url, { query }, { headers });
-    return [_chain[0], response.data.data.reserves];
+    return [chain, response.data.data.reserves];
   } catch (error) {
     console.error(`Error fetching data from ${chain}:`, error);
-    return [_chain[0], []]; // Return empty array on error
+    return [chain, []]; // Return empty array on error
   }
 };
 
@@ -102,7 +102,7 @@ export const apy = async () => {
       data.map(async ([chain, reserves]) =>
         (
           await api.abi.multiCall({
-            chain: chain,
+            chain: chain.split("_")[0],
             abi: ATokenABI.find(({ name }) => name === "totalSupply"),
             calls: reserves.map((reserve: any) => ({
               target: reserve.aToken.id,
@@ -116,7 +116,7 @@ export const apy = async () => {
       data.map(async ([chain, reserves]) =>
         (
           await api.abi.multiCall({
-            chain: chain,
+            chain: chain.split("_")[0],
             abi: ATokenABI.find(({ name }) => name === "balanceOf"),
             calls: reserves.map((reserve: any, i: any) => ({
               target: reserve.aToken.underlyingAssetAddress,
@@ -129,13 +129,16 @@ export const apy = async () => {
 
     const underlyingTokens = data.map(([chain, reserves]) =>
       reserves.map(
-        (pool: any) => `${chain}:${pool.aToken.underlyingAssetAddress}`
+        (pool: any) =>
+          `${chain.split("_")[0]}:${pool.aToken.underlyingAssetAddress}`
       )
     );
 
     const rewardTokens = data.map(([chain, reserves]) =>
       reserves.map((pool: any) =>
-        pool.aToken.rewards.map((rew: any) => `${chain}:${rew.rewardToken}`)
+        pool.aToken.rewards.map(
+          (rew: any) => `${chain.split("_")[0]}:${rew.rewardToken}`
+        )
       )
     );
 
@@ -219,7 +222,6 @@ export const apy = async () => {
     const formatedPools = pools.flat().filter((p: any) => !!p.tvlUsd);
     cache.set("apy:zerolend", formatedPools, 60 * 30); //5 mins cache
     return formatedPools;
-    // return pools.flat().filter((p) => !!p.tvlUsd);}
   } catch (e) {
     console.log(e);
   }
