@@ -6,10 +6,10 @@ export const getApy = async (req: Request, res: Response) => {
   try {
     const queryParams = req.query as { aToken?: string; vToken?: string };
     const zerolendPoolData: any = cache.get("apy:zerolend") || [];
-    const aaveV2PoolData: any = cache.get("apy:aave-v2") || [];
+    // const aaveV2PoolData: any = cache.get("apy:aave-v2") || [];
     const aaveV3PoolData: any = cache.get("apy:aave-v3") || [];
 
-    const pools = [...zerolendPoolData, ...aaveV2PoolData, ...aaveV3PoolData];
+    const pools = [...zerolendPoolData, ...aaveV3PoolData];
 
     if (!pools) {
       return res.json({ success: false, message: "No data available" });

@@ -4,6 +4,7 @@ import { api } from "@defillama/sdk";
 import { keepFinite } from "../../utils/finite";
 import poolAbi from "./abi/Pool.json";
 import aaveStakedTokenDataProviderAbi from "./abi/DataProvider.json";
+import aTokenAbi from "./abi/AToken.json";
 import cache from "../../utils/cache";
 import { GHO, protocolDataProviders } from "./constant";
 
@@ -24,6 +25,15 @@ const getApy = async (chain: keyof typeof protocolDataProviders) => {
       chain,
     })
   ).output;
+
+  const poolAddress = (
+    await api.abi.call({
+      target: aTokens[0].tokenAddress,
+      abi: aTokenAbi.find((m: any) => m.name === "POOL"),
+      chain,
+    })
+  ).output;
+  // console.log("poolAddress ", chain, poolAddress);
 
   const poolsReserveData = (
     await api.abi.multiCall({
@@ -130,6 +140,7 @@ const getApy = async (chain: keyof typeof protocolDataProviders) => {
       pool: `${aTokens[i].tokenAddress}-${
         chain === "avax" ? "avalanche" : chain
       }`.toLowerCase(),
+      address: poolAddress,
       chain,
       project: "aave-v3",
       symbol: pool.symbol,
@@ -203,7 +214,6 @@ const stkGho = async () => {
     apy: stkghoApy,
     url: "https://app.aave.com/staking",
   };
-
   return pool;
 };
 
